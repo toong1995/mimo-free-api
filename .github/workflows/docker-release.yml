@@ -1,21 +1,24 @@
 name: Build and Release Docker Image
 
 # 触发条件：
-#   1. 推送 v* 形式的 tag（如 v1.0.0）→ 自动构建并发布到对应 Release
-#   2. 手动触发（workflow_dispatch）→ 可指定 version，便于测试
+#   1. 推送到 docker-deploy 分支（代码改动）→ 自动构建并发布到滚动 latest 预发布，并更新 README
+#   2. 推送 v* 形式的 tag（如 v1.0.0）→ 构建并发布正式版 Release
+#   3. 手动触发（workflow_dispatch）→ 可指定 version，便于测试
 on:
   push:
+    branches:
+      - docker-deploy
     tags:
       - 'v*'
   workflow_dispatch:
     inputs:
       version:
-        description: '版本号（如 v1.0.0，留空则用短 SHA）'
+        description: '版本号（如 v1.0.0，留空则发布到 latest 滚动预发布）'
         required: false
         default: ''
 
 permissions:
-  contents: write   # 创建 Release、上传资源需要
+  contents: write   # 创建 Release、上传资源、回推 README 都需要
 
 jobs:
   # ============ 构建矩阵：amd64 与 arm64 并行构建 ============
@@ -33,18 +36,47 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 计算版本号
+      - name: 计算版本与发布通道
         id: ver
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            V="${{ github.event.inputs.version }}"
-          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            V="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            # tag 推送 → 正式版本号
+            VERSION="${GITHUB_REF_NAME}"
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+            FILE_PREFIX="${GITHUB_REF_NAME}"
+            CHANNEL="tag"
+            PRERELEASE="false"
+            MAKE_LATEST="true"
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            INPUT_VER="${{ github.event.inputs.version }}"
+            if [ -n "$INPUT_VER" ]; then
+              VERSION="$INPUT_VER"
+              RELEASE_TAG="$INPUT_VER"
+              FILE_PREFIX="$INPUT_VER"
+            else
+              VERSION="dev-${GITHUB_SHA::7}"
+              RELEASE_TAG="latest"
+              FILE_PREFIX="latest"
+            fi
+            CHANNEL="dispatch"
+            PRERELEASE="true"
+            MAKE_LATEST="false"
           else
-            V="v${GITHUB_SHA::7}"
+            # 分支推送（代码改动）→ latest 滚动预发布
+            VERSION="dev-${GITHUB_SHA::7}"
+            RELEASE_TAG="latest"
+            FILE_PREFIX="latest"
+            CHANNEL="branch"
+            PRERELEASE="true"
+            MAKE_LATEST="false"
           fi
-          echo "version=${V}" >> "$GITHUB_OUTPUT"
-          echo "tar=mimo-gateway-${V}-${{ matrix.platform }}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}"        >> "$GITHUB_OUTPUT"
+          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "file_prefix=${FILE_PREFIX}" >> "$GITHUB_OUTPUT"
+          echo "channel=${CHANNEL}"         >> "$GITHUB_OUTPUT"
+          echo "prerelease=${PRERELEASE}"   >> "$GITHUB_OUTPUT"
+          echo "make_latest=${MAKE_LATEST}" >> "$GITHUB_OUTPUT"
+          echo "tar=mimo-gateway-${FILE_PREFIX}-${{ matrix.platform }}.tar.gz" >> "$GITHUB_OUTPUT"
 
       - name: 设置 QEMU（arm64 交叉构建需要）
         uses: docker/setup-qemu-action@v3
@@ -80,63 +112,94 @@ jobs:
           path: ${{ steps.ver.outputs.tar }}
           retention-days: 3
 
-  # ============ 收集所有架构产物，创建 Release ============
+  # ============ 收集产物，创建/更新 Release，必要时回推 README ============
   release:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: 计算版本号
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 回推 README 需要完整历史
+
+      - name: 计算版本与发布通道
         id: ver
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            V="${{ github.event.inputs.version }}"
-          elif [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            V="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME}"
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+            FILE_PREFIX="${GITHUB_REF_NAME}"
+            CHANNEL="tag"
+            PRERELEASE="false"
+            MAKE_LATEST="true"
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            INPUT_VER="${{ github.event.inputs.version }}"
+            if [ -n "$INPUT_VER" ]; then
+              VERSION="$INPUT_VER"
+              RELEASE_TAG="$INPUT_VER"
+              FILE_PREFIX="$INPUT_VER"
+            else
+              VERSION="dev-${GITHUB_SHA::7}"
+              RELEASE_TAG="latest"
+              FILE_PREFIX="latest"
+            fi
+            CHANNEL="dispatch"
+            PRERELEASE="true"
+            MAKE_LATEST="false"
           else
-            V="v${GITHUB_SHA::7}"
+            VERSION="dev-${GITHUB_SHA::7}"
+            RELEASE_TAG="latest"
+            FILE_PREFIX="latest"
+            CHANNEL="branch"
+            PRERELEASE="true"
+            MAKE_LATEST="false"
           fi
-          echo "version=${V}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}"        >> "$GITHUB_OUTPUT"
+          echo "release_tag=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "file_prefix=${FILE_PREFIX}" >> "$GITHUB_OUTPUT"
+          echo "channel=${CHANNEL}"         >> "$GITHUB_OUTPUT"
+          echo "prerelease=${PRERELEASE}"   >> "$GITHUB_OUTPUT"
+          echo "make_latest=${MAKE_LATEST}" >> "$GITHUB_OUTPUT"
 
-      - name: 下载所有构建产物
+      - name: 下载镜像构建产物
         uses: actions/download-artifact@v4
         with:
           path: assets
           merge-multiple: true
-          # 只下载镜像压缩包，过滤掉可能残留的 .dockerbuild 等其它 artifact
           pattern: mimo-gateway-*.tar.gz
 
       - name: 查看产物
         run: ls -lh assets/
 
-      - name: 创建 Release 并上传镜像
+      - name: 创建/更新 Release 并上传镜像
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.ver.outputs.version }}
-          name: ${{ steps.ver.outputs.version }}
-          generate_release_notes: true
-          # 手动触发且非 tag 时，作为 prerelease 草稿
-          prerelease: ${{ github.event_name == 'workflow_dispatch' }}
+          tag_name: ${{ steps.ver.outputs.release_tag }}
+          name: ${{ steps.ver.outputs.release_tag == 'latest' && 'Latest (auto-build)' || steps.ver.outputs.release_tag }}
+          generate_release_notes: ${{ steps.ver.outputs.channel != 'branch' }}
+          prerelease: ${{ steps.ver.outputs.prerelease }}
+          make_latest: ${{ steps.ver.outputs.make_latest }}
           fail_on_unmatched_files: true
           files: |
             assets/*.tar.gz
           body: |
             ## Docker 镜像
 
-            本次发布包含两种 CPU 架构的 Docker 镜像压缩包：
+            ${{ steps.ver.outputs.channel == 'branch' && '本次为 `docker-deploy` 分支代码改动触发的**自动滚动构建**（预发布），始终覆盖同一个 `latest` Release，可拿到最新代码的镜像。' || '本次发布包含两种 CPU 架构的 Docker 镜像压缩包。' }}
 
             | 文件 | 架构 | 适用场景 |
             |------|------|----------|
-            `mimo-gateway-${{ steps.ver.outputs.version }}-amd64.tar.gz` | linux/amd64 | 普通 PC / 云服务器 |
-            `mimo-gateway-${{ steps.ver.outputs.version }}-arm64.tar.gz` | linux/arm64 | Apple Silicon / 树莓派 / ARM 服务器 |
+            `mimo-gateway-${{ steps.ver.outputs.file_prefix }}-amd64.tar.gz` | linux/amd64 | 普通 PC / 云服务器 |
+            `mimo-gateway-${{ steps.ver.outputs.file_prefix }}-arm64.tar.gz` | linux/arm64 | Apple Silicon / 树莓派 / ARM 服务器 |
 
             ### 使用方法
 
             ```bash
             # 1. 下载对应架构的 .tar.gz 并解压
-            gunzip mimo-gateway-${{ steps.ver.outputs.version }}-amd64.tar.gz
+            gunzip mimo-gateway-${{ steps.ver.outputs.file_prefix }}-amd64.tar.gz
 
             # 2. 导入镜像
-            docker load -i mimo-gateway-${{ steps.ver.outputs.version }}-amd64.tar
+            docker load -i mimo-gateway-${{ steps.ver.outputs.file_prefix }}-amd64.tar
 
             # 3. 运行（无需再构建）
             docker run -d --name mimo-gateway \
@@ -153,3 +216,42 @@ jobs:
             打开 `http://localhost:8080`，输入 API Key 解锁管理面板，添加 MiMo 账号即可。
 
             > 默认 API Key 为 `sk-mimo`，**强烈建议**通过 `MIMO_API_KEY` 环境变量改为强随机值。
+
+      - name: 更新 README 中的 Latest 构建信息
+        if: steps.ver.outputs.channel == 'branch'
+        env:
+          REPO: ${{ github.repository }}
+          TAG: ${{ steps.ver.outputs.release_tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          python3 -c '
+          import re, datetime, os
+          repo = os.environ["REPO"]
+          tag = os.environ["TAG"]
+          sha = os.environ["SHA"][:7]
+          date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+          amd64 = "mimo-gateway-" + tag + "-amd64.tar.gz"
+          arm64 = "mimo-gateway-" + tag + "-arm64.tar.gz"
+          amd64_url = "https://github.com/" + repo + "/releases/download/" + tag + "/" + amd64
+          arm64_url = "https://github.com/" + repo + "/releases/download/" + tag + "/" + arm64
+          block = "最近自动构建：" + date + "（commit `" + sha + "`）\n\n| 文件 | 架构 | 下载 |\n|------|------|------|\n| `" + amd64 + "` | linux/amd64 | [下载](" + amd64_url + ") |\n| `" + arm64 + "` | linux/arm64 | [下载](" + arm64_url + ") |"
+          with open("README.md", encoding="utf-8") as f:
+              content = f.read()
+          pattern = r"<!-- AUTO-BUILD:START -->.*?<!-- AUTO-BUILD:END -->"
+          replacement = "<!-- AUTO-BUILD:START -->\n" + block + "\n<!-- AUTO-BUILD:END -->"
+          new_content, n = re.subn(pattern, replacement, content, flags=re.DOTALL)
+          if n == 0:
+              print("WARN: AUTO-BUILD marker not found, skipping README update")
+          else:
+              with open("README.md", "w", encoding="utf-8") as f:
+                  f.write(new_content)
+              print("README updated")
+          '
+
+          # 回推 README。用默认 GITHUB_TOKEN 的推送本身不会触发新的 workflow 运行，
+          # 再加 [skip ci] 双保险，确保不会形成循环。
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs(auto): 更新 Latest 构建信息 @ ${SHA:0:7} [skip ci]" || echo "README 无变化，跳过提交"
+          git push

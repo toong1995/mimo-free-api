@@ -207,6 +207,18 @@ docker run -d --name mimo-gateway \
 
 每次推送 `v*` 标签（如 `v1.0.0`）时，GitHub Actions 会自动构建 **amd64** 与 **arm64** 两种架构的 Docker 镜像，并打包成 `.tar.gz` 上传到 [Releases 页面](https://github.com/toong1995/mimo-free-api/releases)。这样无需本地安装 Go/Node，也无需 `docker build`，直接导入即可运行。
 
+#### 🔄 Latest 自动构建（随代码更新）
+
+只要 `docker-deploy` 分支有代码改动，CI 会**自动**重新构建镜像并覆盖发布到 [`latest` 预发布](https://github.com/toong1995/mimo-free-api/releases/tag/latest)。想要最新代码的镜像，下载 `latest` 即可；想要稳定版，用带版本号的 Release（如 `v1.0.0`）。
+
+下方构建信息由 CI 自动维护（每次代码改动后刷新）：
+
+<!-- AUTO-BUILD:START -->
+_尚未运行自动构建_
+<!-- AUTO-BUILD:END -->
+
+> `latest` 文件名固定为 `mimo-gateway-latest-<arch>.tar.gz`，下载链接永久有效，每次覆盖更新。
+
 #### 使用方法
 
 ```bash
@@ -248,10 +260,11 @@ services:
 
 | 方式 | 操作 | 结果 |
 |------|------|------|
-| 自动 | `git tag v1.0.0 && git push origin v1.0.0` | 构建 amd64+arm64，发布正式 Release |
-| 手动 | 在 GitHub 仓库 → Actions → 「Build and Release Docker Image」→ Run workflow | 发布 prerelease（便于测试） |
+| 自动 | 推送任意提交到 `docker-deploy` 分支（代码改动） | 自动构建 amd64+arm64，覆盖发布到 `latest` 预发布，并回写更新 README |
+| 自动 | `git tag v1.0.0 && git push origin v1.0.0` | 构建 amd64+arm64，发布正式 Release（标记为 Latest） |
+| 手动 | Actions → 「Build and Release Docker Image」→ Run workflow | 发布 prerelease；填 `version` 则发该版本号，留空则发 `latest` |
 
-> 手动触发不依赖 tag，会用短 SHA 作为版本号，并标记为 prerelease，方便验证流程。
+> 三种通道互不冲突：分支推送产 `latest` 滚动预发布，tag 推送产正式版。README 回写用 `[skip ci]` 提交，不会触发循环。
 
 ---
 
