@@ -1,8 +1,28 @@
 services:
   mimo-gateway:
     build: .
+    image: mimo-gateway:latest
+    container_name: mimo-gateway
+    restart: unless-stopped
     ports:
       - "8080:8080"
+    environment:
+      # ===== 必改：网关自身的 API Key（客户端连接时使用）=====
+      # 强烈建议改成强随机值，例如：openssl rand -hex 24
+      MIMO_API_KEY: ${MIMO_API_KEY:-sk-mimo}
+      # ===== 可选：监听端口（容器内）=====
+      MIMO_PORT: "8080"
+      # ===== 可选：默认模型 mimo-v2.5(全模态) / mimo-v2.5-pro(推理增强) =====
+      MIMO_DEFAULT_MODEL: ${MIMO_DEFAULT_MODEL:-mimo-v2.5}
+      # ===== 可选：并发上限，超过返回 503 =====
+      MAX_CONCURRENCY: ${MAX_CONCURRENCY:-8}
+      # ===== 配置文件路径：放在持久化卷内，账号/模型改动不丢失 =====
+      CONFIG_PATH: /app/data/config.json
+      # 时区
+      TZ: Asia/Shanghai
     volumes:
-      - ./config.json:/app/config.json
-    restart: unless-stopped
+      # 命名卷：持久化 config.json / stats.json / conversations.json
+      - mimo-data:/app/data
+
+volumes:
+  mimo-data:

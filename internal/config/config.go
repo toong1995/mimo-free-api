@@ -34,12 +34,32 @@ func Load(p string) (*Config, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			cfg = &Config{Port: "8080", APIKey: "sk-mimo", DefaultModel: "mimo-v2.5-pro"}
+			applyEnvOverrides(cfg)
 			return cfg, Save()
 		}
 		return nil, err
 	}
 	cfg = &Config{}
-	return cfg, json.Unmarshal(data, cfg)
+	if err := json.Unmarshal(data, cfg); err != nil {
+		return nil, err
+	}
+	applyEnvOverrides(cfg)
+	return cfg, nil
+}
+
+// applyEnvOverrides 用环境变量覆盖配置文件的值，便于容器化部署：
+// 无需挂载 config.json 即可设置 API Key / 端口 / 默认模型。
+// 仅当环境变量非空时覆盖。
+func applyEnvOverrides(c *Config) {
+	if v := os.Getenv("MIMO_PORT"); v != "" {
+		c.Port = v
+	}
+	if v := os.Getenv("MIMO_API_KEY"); v != "" {
+		c.APIKey = v
+	}
+	if v := os.Getenv("MIMO_DEFAULT_MODEL"); v != "" {
+		c.DefaultModel = v
+	}
 }
 
 func Get() Config {

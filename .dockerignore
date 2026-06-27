@@ -1,0 +1,35 @@
+# 构建产物 / 二进制
+*.exe
+mimo-free-api
+mimo-gateway
+static/
+web/dist/
+
+# 依赖
+web/node_modules/
+
+# 运行时数据（容器内由卷提供）
+data/
+config.json
+
+# Git / IDE / 系统
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# 文档与临时文件
+README.md
+assets/
+tmp_*
+test_*.py
+scripts/
+
+# Docker 自身（避免递归）
+Dockerfile
+.dockerignore
+docker-compose.yml
