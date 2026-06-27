@@ -214,7 +214,12 @@ docker run -d --name mimo-gateway \
 下方构建信息由 CI 自动维护（每次代码改动后刷新）：
 
 <!-- AUTO-BUILD:START -->
-_尚未运行自动构建_
+最近自动构建：2026-06-27 04:00 UTC（commit `8a7e9b1`）
+
+| 文件 | 架构 | 下载 |
+|------|------|------|
+| `mimo-gateway-latest-amd64.tar.gz` | linux/amd64 | [下载](https://github.com/toong1995/mimo-free-api/releases/download/latest/mimo-gateway-latest-amd64.tar.gz) |
+| `mimo-gateway-latest-arm64.tar.gz` | linux/arm64 | [下载](https://github.com/toong1995/mimo-free-api/releases/download/latest/mimo-gateway-latest-arm64.tar.gz) |
 <!-- AUTO-BUILD:END -->
 
 > `latest` 文件名固定为 `mimo-gateway-latest-<arch>.tar.gz`，下载链接永久有效，每次覆盖更新。
