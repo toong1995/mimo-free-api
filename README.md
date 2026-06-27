@@ -214,7 +214,7 @@ docker run -d --name mimo-gateway \
 下方构建信息由 CI 自动维护（每次代码改动后刷新）：
 
 <!-- AUTO-BUILD:START -->
-最近自动构建：2026-06-27 04:00 UTC（commit `8a7e9b1`）
+最近自动构建：2026-06-27 04:06 UTC（commit `9e5591f`）
 
 | 文件 | 架构 | 下载 |
 |------|------|------|
