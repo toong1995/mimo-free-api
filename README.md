@@ -203,6 +203,58 @@ docker run -d --name mimo-gateway \
 
 ---
 
+### 📦 从 Release 下载预构建镜像（无需本地构建）
+
+每次推送 `v*` 标签（如 `v1.0.0`）时，GitHub Actions 会自动构建 **amd64** 与 **arm64** 两种架构的 Docker 镜像，并打包成 `.tar.gz` 上传到 [Releases 页面](https://github.com/toong1995/mimo-free-api/releases)。这样无需本地安装 Go/Node，也无需 `docker build`，直接导入即可运行。
+
+#### 使用方法
+
+```bash
+# 1. 从 Release 下载对应架构的压缩包（以 v1.0.0 amd64 为例）
+#    也可在 Releases 页面手动点击下载
+wget https://github.com/toong1995/mimo-free-api/releases/download/v1.0.0/mimo-gateway-v1.0.0-amd64.tar.gz
+
+# 2. 解压 + 导入镜像
+gunzip mimo-gateway-v1.0.0-amd64.tar.gz
+docker load -i mimo-gateway-v1.0.0-amd64.tar
+# 导入成功后会提示：Loaded image: mimo-gateway:amd64
+
+# 3. 运行
+docker run -d --name mimo-gateway \
+  -p 8080:8080 \
+  -e MIMO_API_KEY="sk-改成强随机值" \
+  -v mimo-data:/app/data \
+  --restart unless-stopped \
+  mimo-gateway:amd64
+```
+
+> arm64 机器（Apple Silicon / 树莓派 / ARM 服务器）把上面的 `amd64` 换成 `arm64` 即可。
+
+#### 配合 docker-compose.yml 使用预构建镜像
+
+把 `docker-compose.yml` 里的 `build: .` 删掉，改用导入的镜像：
+
+```yaml
+services:
+  mimo-gateway:
+    image: mimo-gateway:amd64   # 或 arm64
+    container_name: mimo-gateway
+    # ... 其余 environment / volumes / ports 保持不变
+```
+
+然后 `docker compose up -d` 即可。
+
+#### CI 触发方式（仓库维护者）
+
+| 方式 | 操作 | 结果 |
+|------|------|------|
+| 自动 | `git tag v1.0.0 && git push origin v1.0.0` | 构建 amd64+arm64，发布正式 Release |
+| 手动 | 在 GitHub 仓库 → Actions → 「Build and Release Docker Image」→ Run workflow | 发布 prerelease（便于测试） |
+
+> 手动触发不依赖 tag，会用短 SHA 作为版本号，并标记为 prerelease，方便验证流程。
+
+---
+
 ### 🍪 获取 MiMo 账号 Cookie 详细攻略
 
 #### 第一步：登录 MiMo AI Studio
