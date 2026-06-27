@@ -54,6 +54,10 @@ jobs:
 
       - name: 构建镜像（加载到本地 docker）
         uses: docker/build-push-action@v6
+        env:
+          # 禁用 buildx 自动上传 .dockerbuild 构建记录 artifact，
+          # 避免污染 release 下载步骤（只保留镜像 tar.gz）
+          DOCKER_BUILD_RECORD_UPLOAD: false
         with:
           context: .
           platforms: ${{ matrix.docker_platform }}
@@ -98,6 +102,8 @@ jobs:
         with:
           path: assets
           merge-multiple: true
+          # 只下载镜像压缩包，过滤掉可能残留的 .dockerbuild 等其它 artifact
+          pattern: mimo-gateway-*.tar.gz
 
       - name: 查看产物
         run: ls -lh assets/
