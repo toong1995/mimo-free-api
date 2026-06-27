@@ -23,10 +23,10 @@ const (
 
 // WebClient 是 MiMo AI Studio 网页端客户端
 type WebClient struct {
-	httpClient *http.Client
+	httpClient   *http.Client
 	serviceToken string
-	userID      string
-	ph          string
+	userID       string
+	ph           string
 }
 
 // NewWebClient 创建网页端客户端
@@ -41,17 +41,17 @@ func NewWebClient(serviceToken, userID, ph string) *WebClient {
 
 // WebChatRequest 是网页端请求格式
 type WebChatRequest struct {
-	MsgID          string       `json:"msgId"`
-	ConversationID string       `json:"conversationId"`
-	Query          string       `json:"query"`
+	MsgID          string        `json:"msgId"`
+	ConversationID string        `json:"conversationId"`
+	Query          string        `json:"query"`
 	Messages       []interface{} `json:"messages"`
-	ParentID       string       `json:"parentId"`
-	Save           bool         `json:"save"`
-	IsEditedQuery  bool         `json:"isEditedQuery"`
-	Source         string       `json:"source"`
-	Scene          string       `json:"scene"`
-	IsLocal        bool         `json:"isLocal"`
-	ModelConfig    ModelConfig  `json:"modelConfig"`
+	ParentID       string        `json:"parentId"`
+	Save           bool          `json:"save"`
+	IsEditedQuery  bool          `json:"isEditedQuery"`
+	Source         string        `json:"source"`
+	Scene          string        `json:"scene"`
+	IsLocal        bool          `json:"isLocal"`
+	ModelConfig    ModelConfig   `json:"modelConfig"`
 	MultiMedias    []interface{} `json:"multiMedias"`
 }
 
@@ -116,7 +116,7 @@ func (c *WebClient) Chat(ctx context.Context, query, model, conversationID, pare
 	httpReq.Header.Set("sec-ch-ua-mobile", "?0")
 	httpReq.Header.Set("sec-ch-ua-platform", "\"Windows\"")
 	httpReq.Header.Set("Cookie", fmt.Sprintf(
-		"userId=%s; serviceToken=%q; xiaomichatbot_ph=%q",
+		"userId=%s; serviceToken=%s; xiaomichatbot_ph=%s",
 		c.userID, c.serviceToken, c.ph,
 	))
 
@@ -203,7 +203,7 @@ func (c *WebClient) SaveConversation(ctx context.Context, conversationID, query 
 	req.Header.Set("x-timezone", "Asia/Shanghai")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
 	req.Header.Set("Cookie", fmt.Sprintf(
-		"userId=%s; serviceToken=%q; xiaomichatbot_ph=%q",
+		"userId=%s; serviceToken=%s; xiaomichatbot_ph=%s",
 		c.userID, c.serviceToken, c.ph,
 	))
 
@@ -226,7 +226,7 @@ func (c *WebClient) Validate(ctx context.Context) error {
 		return err
 	}
 	req.Header.Set("Cookie", fmt.Sprintf(
-		"userId=%s; serviceToken=%q; xiaomichatbot_ph=%q",
+		"userId=%s; serviceToken=%s; xiaomichatbot_ph=%s",
 		c.userID, c.serviceToken, c.ph,
 	))
 	resp, err := c.httpClient.Do(req)

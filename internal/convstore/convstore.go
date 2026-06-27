@@ -20,6 +20,16 @@ type convState struct {
 	ParentID string // last AI response message ID from MiMo SSE
 }
 
+// processSalt 进程级随机盐，避免不同实例间首条消息相同导致的会话串扰
+var processSalt = func() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// 极端情况下退化为固定值（不影响功能，仅降低隔离性）
+		return "fallback-salt-v1"
+	}
+	return hex.EncodeToString(b)
+}()
+
 func New() *Store {
 	return &Store{
 		convs: make(map[string]*convState),
@@ -27,9 +37,16 @@ func New() *Store {
 }
 
 // DeriveKey generates a stable lookup key from the first user message + model.
+// clientHint 可由客户端通过 X-Conv-Key 头显式指定会话标识，
+// 显式指定时优先使用，避免不同对话首条消息相同导致的上下文串扰。
 // This is used ONLY for local lookup, NOT sent to MiMo.
-func DeriveKey(firstUserMsg, model string) string {
-	h := sha256.Sum256([]byte(firstUserMsg + "|" + model))
+func DeriveKey(firstUserMsg, model, clientHint string) string {
+	base := firstUserMsg + "|" + model
+	if clientHint != "" {
+		base = clientHint + "|" + model
+	}
+	// 加入进程级 salt，隔离不同实例
+	h := sha256.Sum256([]byte(base + "|" + processSalt))
 	return fmt.Sprintf("%x", h[:16]) // 32-char hex
 }
 
@@ -41,10 +58,7 @@ func (s *Store) GetOrCreate(key string) (convID, parentID string) {
 	if cs, ok := s.convs[key]; ok {
 		return cs.ConvID, cs.ParentID
 	}
-	// New conversation: use random UUID to avoid collision with existing MiMo conversations
-	newConvID := fmt.Sprintf("%x", [16]byte{}) // placeholder
-	// Actually generate a proper UUID
-	newConvID = randomHex32()
+	newConvID := randomHex32()
 	s.convs[key] = &convState{ConvID: newConvID, ParentID: "0"}
 	return newConvID, "0"
 }

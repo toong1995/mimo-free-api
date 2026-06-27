@@ -55,7 +55,8 @@ func Save() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	// 0600：仅属主可读写，防止同机其他用户读取 Cookie 明文
+	return os.WriteFile(path, data, 0600)
 }
 
 func Update(fn func(*Config)) {

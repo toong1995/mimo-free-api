@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Key, Cpu, Save, Eye, EyeOff, Check, Loader2, Users, Plus, Trash2, Globe } from 'lucide-react'
+import { Key, Cpu, Save, Eye, EyeOff, Check, Loader2, Users, Plus, Trash2, Globe, Lock } from 'lucide-react'
 import { useSettings } from '../contexts/SettingsContext'
-import { apiFetch } from '../lib/api'
+import { apiFetch, getAdminKey, setAdminKey } from '../lib/api'
 
 interface Account {
   id: string
@@ -25,6 +25,11 @@ export function ConfigPanel() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
 
+  // 鉴权状态：自用场景下管理接口复用 API Key
+  const [authed, setAuthed] = useState(() => !!getAdminKey())
+  const [keyInput, setKeyInput] = useState('')
+  const [authError, setAuthError] = useState(false)
+
   // Add form state
   const [showAdd, setShowAdd] = useState(false)
   const [newId, setNewId] = useState('')
@@ -35,8 +40,19 @@ export function ConfigPanel() {
 
   const loadConfig = () => {
     apiFetch('/admin/api/config')
-      .then(r => r.json())
+      .then(r => {
+        if (r.status === 401) {
+          setAuthed(false)
+          setAuthError(true)
+          setLoading(false)
+          return null
+        }
+        return r.json()
+      })
       .then(cfg => {
+        if (!cfg) return
+        setAuthed(true)
+        setAuthError(false)
         setApiKey(cfg.api_key || '')
         setDefaultModel(cfg.default_model || 'mimo-v2.5')
         setAccounts(cfg.accounts || [])
@@ -46,6 +62,17 @@ export function ConfigPanel() {
   }
 
   useEffect(() => { loadConfig() }, [])
+
+  const handleAuth = () => {
+    setAdminKey(keyInput.trim())
+    setKeyInput('')
+    loadConfig()
+  }
+
+  const handleLogout = () => {
+    setAdminKey('')
+    setAuthed(false)
+  }
 
   const handleSave = async () => {
     setSaving(true)
@@ -98,12 +125,6 @@ export function ConfigPanel() {
     if (res.ok) loadConfig()
   }
 
-  const maskToken = (token: string) => {
-    if (!token) return '-'
-    if (token.length <= 12) return '***'
-    return token.slice(0, 6) + '...' + token.slice(-4)
-  }
-
   const inputClass = isDark
     ? 'w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 transition-all font-mono text-sm'
     : 'w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all font-mono text-sm'
@@ -114,6 +135,52 @@ export function ConfigPanel() {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className={`w-6 h-6 animate-spin ${isDark ? 'text-purple-400' : 'text-blue-500'}`} />
+      </div>
+    )
+  }
+
+  // 未鉴权：展示管理密钥输入卡片（自用场景复用 API Key）
+  if (!authed) {
+    return (
+      <div className="space-y-8 max-w-3xl">
+        <div>
+          <motion.h1 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-gray-800'}`} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
+            {t('configTitle')}
+          </motion.h1>
+        </div>
+        <motion.div className={cardClass} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+          <h2 className={`text-base font-semibold ${isDark ? 'text-white' : 'text-gray-700'} flex items-center gap-2`}>
+            <Lock className={`w-4 h-4 ${isDark ? 'text-purple-400' : 'text-blue-500'}`} />
+            {lang === 'zh' ? '管理鉴权' : 'Admin Authentication'}
+          </h2>
+          <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+            {lang === 'zh'
+              ? '管理接口已启用鉴权。请输入 API Key（即 config.json 中的 api_key）以继续。'
+              : 'Admin endpoints are protected. Enter the API Key (the api_key in config.json) to continue.'}
+          </p>
+          <div className="space-y-1.5">
+            <input
+              type="password"
+              value={keyInput}
+              onChange={e => setKeyInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleAuth() }}
+              className={inputClass}
+              placeholder="sk-..."
+              autoFocus
+            />
+            {authError && (
+              <p className="text-xs text-red-500">{lang === 'zh' ? '密钥无效，请重试' : 'Invalid key, please try again'}</p>
+            )}
+          </div>
+          <motion.button
+            onClick={handleAuth}
+            disabled={!keyInput.trim()}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg text-sm disabled:opacity-50"
+            whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+            <Lock className="w-4 h-4" />
+            {lang === 'zh' ? '解锁' : 'Unlock'}
+          </motion.button>
+        </motion.div>
       </div>
     )
   }
@@ -132,10 +199,18 @@ export function ConfigPanel() {
 
       {/* API Settings */}
       <motion.div className={cardClass} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-        <h2 className={`text-base font-semibold ${isDark ? 'text-white' : 'text-gray-700'} flex items-center gap-2`}>
-          <Key className={`w-4 h-4 ${isDark ? 'text-purple-400' : 'text-blue-500'}`} />
-          API {lang === 'zh' ? '设置' : 'Settings'}
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className={`text-base font-semibold ${isDark ? 'text-white' : 'text-gray-700'} flex items-center gap-2`}>
+            <Key className={`w-4 h-4 ${isDark ? 'text-purple-400' : 'text-blue-500'}`} />
+            API {lang === 'zh' ? '设置' : 'Settings'}
+          </h2>
+          <button
+            onClick={handleLogout}
+            className={`flex items-center gap-1 text-xs ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-400 hover:text-gray-600'} transition-colors`}>
+            <Lock className="w-3.5 h-3.5" />
+            {lang === 'zh' ? '退出鉴权' : 'Lock'}
+          </button>
+        </div>
 
         <div className="space-y-1.5">
           <label className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>API Key</label>
@@ -270,7 +345,7 @@ export function ConfigPanel() {
                       <div className={`flex flex-wrap gap-x-4 gap-y-0.5 mt-1 text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                         <span className="font-mono">user_id: {acc.user_id || '-'}</span>
                         <span className="font-mono">ph: {acc.ph || '-'}</span>
-                        <span className="font-mono">token: {maskToken(acc.service_token)}</span>
+                        <span className="font-mono">token: {acc.service_token}</span>
                       </div>
                     </div>
 

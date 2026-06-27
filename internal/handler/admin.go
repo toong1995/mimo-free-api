@@ -19,7 +19,23 @@ func NewAdminHandler(p *pool.Pool) *AdminHandler {
 
 func (h *AdminHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	cfg := config.Get()
+	// 脱敏：service_token / ph 只返回掩码，避免接口泄露完整 Cookie
+	for i := range cfg.Accounts {
+		cfg.Accounts[i].ServiceToken = maskSecret(cfg.Accounts[i].ServiceToken)
+		cfg.Accounts[i].Ph = maskSecret(cfg.Accounts[i].Ph)
+	}
 	writeJSON(w, cfg)
+}
+
+// maskSecret 保留首尾少量字符，中间以 *** 代替；空值返回 "-"
+func maskSecret(s string) string {
+	if s == "" {
+		return "-"
+	}
+	if len(s) <= 8 {
+		return "***"
+	}
+	return s[:4] + "..." + s[len(s)-4:]
 }
 
 func (h *AdminHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {

@@ -42,32 +42,35 @@ type ModelStats struct {
 
 // StatsResponse 完整统计响应
 type StatsResponse struct {
-	Total       TotalStats     `json:"total"`
-	ByDay       []DailyStats   `json:"by_day"`
-	ByModel     []ModelStats   `json:"by_model"`
-	Concurrency int            `json:"concurrency"`
-	Recent      []UsageRecord  `json:"recent"`
+	Total       TotalStats    `json:"total"`
+	ByDay       []DailyStats  `json:"by_day"`
+	ByModel     []ModelStats  `json:"by_model"`
+	Concurrency int           `json:"concurrency"`
+	Recent      []UsageRecord `json:"recent"`
 }
 
 // TotalStats 总量统计
 type TotalStats struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	CachedTokens     int `json:"cached_tokens"`
-	ReasoningTokens  int `json:"reasoning_tokens"`
-	TotalTokens      int `json:"total_tokens"`
-	RequestCount     int `json:"request_count"`
+	PromptTokens     int     `json:"prompt_tokens"`
+	CompletionTokens int     `json:"completion_tokens"`
+	CachedTokens     int     `json:"cached_tokens"`
+	ReasoningTokens  int     `json:"reasoning_tokens"`
+	TotalTokens      int     `json:"total_tokens"`
+	RequestCount     int     `json:"request_count"`
 	CacheHitRate     float64 `json:"cache_hit_rate"`
 }
 
 // Tracker 追踪器
 type Tracker struct {
-	mu       sync.RWMutex
-	records  []UsageRecord
-	path     string
+	mu          sync.RWMutex
+	records     []UsageRecord
+	path        string
 	concurrency int32 // 原子操作，但用 mutex 也行
 	convMu      sync.RWMutex
 }
+
+// maxRecords 限制内存与磁盘上的记录条数，避免长期运行无限增长
+const maxRecords = 10000
 
 var globalTracker *Tracker
 
@@ -99,6 +102,10 @@ func (t *Tracker) Record(model string, prompt, completion, cached, reasoning, to
 		TotalTokens:      total,
 	}
 	t.records = append(t.records, rec)
+	// 滚动裁剪：只保留最近 maxRecords 条，避免内存与磁盘无限增长
+	if len(t.records) > maxRecords {
+		t.records = t.records[len(t.records)-maxRecords:]
+	}
 	t.save()
 }
 
@@ -209,7 +216,8 @@ func (t *Tracker) save() {
 	if err != nil {
 		return
 	}
-	os.WriteFile(t.path, data, 0644)
+	// 0600：仅属主可读写
+	os.WriteFile(t.path, data, 0600)
 }
 
 func (t *Tracker) load() {
@@ -221,4 +229,8 @@ func (t *Tracker) load() {
 		return
 	}
 	json.Unmarshal(data, &t.records)
+	// 加载时同样裁剪，防止历史文件过大
+	if len(t.records) > maxRecords {
+		t.records = t.records[len(t.records)-maxRecords:]
+	}
 }

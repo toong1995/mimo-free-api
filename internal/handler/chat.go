@@ -37,17 +37,17 @@ type parsedEvent struct {
 
 // usageData MiMo usage 事件结构
 type usageData struct {
-	PromptTokens     int `json:"promptTokens"`
-	CompletionTokens int `json:"completionTokens"`
-	TotalTokens      int `json:"totalTokens"`
+	PromptTokens     int          `json:"promptTokens"`
+	CompletionTokens int          `json:"completionTokens"`
+	TotalTokens      int          `json:"totalTokens"`
 	NativeUsage      *nativeUsage `json:"nativeUsage,omitempty"`
 }
 
 type nativeUsage struct {
-	PromptTokens     int              `json:"prompt_tokens"`
-	CompletionTokens int              `json:"completion_tokens"`
-	TotalTokens      int              `json:"total_tokens"`
-	PromptDetails    *promptDetails   `json:"prompt_tokens_details,omitempty"`
+	PromptTokens      int                `json:"prompt_tokens"`
+	CompletionTokens  int                `json:"completion_tokens"`
+	TotalTokens       int                `json:"total_tokens"`
+	PromptDetails     *promptDetails     `json:"prompt_tokens_details,omitempty"`
 	CompletionDetails *completionDetails `json:"completion_tokens_details,omitempty"`
 }
 
@@ -82,11 +82,12 @@ func (h *ChatHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.handleWebChat(ctx, w, &req, routeResult.Model, req.Stream)
+	convHint := r.Header.Get("X-Conv-Key")
+	h.handleWebChat(ctx, w, &req, routeResult.Model, req.Stream, convHint)
 }
 
 // handleWebChat 使用网页端反代 — 有状态模式（复用 MiMo conversationId + parentId）
-func (h *ChatHandler) handleWebChat(ctx context.Context, w http.ResponseWriter, req *adapter.OpenAIChatRequest, model string, stream bool) {
+func (h *ChatHandler) handleWebChat(ctx context.Context, w http.ResponseWriter, req *adapter.OpenAIChatRequest, model string, stream bool, convHint string) {
 	client, err := h.pool.Next()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
@@ -105,7 +106,7 @@ func (h *ChatHandler) handleWebChat(ctx context.Context, w http.ResponseWriter, 
 
 	// Look up or create conversation using hash of first message as key
 	firstMsg := extractFirstOpenAIUserMessage(req.Messages)
-	key := convstore.DeriveKey(firstMsg, model)
+	key := convstore.DeriveKey(firstMsg, model, convHint)
 	convID, parentID := h.convStore.GetOrCreate(key)
 
 	// Inject tool definitions into query so MiMo knows what tools are available
@@ -114,7 +115,6 @@ func (h *ChatHandler) handleWebChat(ctx context.Context, w http.ResponseWriter, 
 		query = toolPrompt + "\n\n" + query
 		log.Printf("[tools] stateful prompt with %d tools, query len=%d, key=%s, convID=%s, parentID=%s",
 			len(req.Tools), len(query), key[:8], convID[:8], parentID[:min(len(parentID), 8)])
-		log.Printf("[tools] query content: %q", query[:min(len(query), 300)])
 	}
 
 	stats.Get().IncrConcurrency()
@@ -255,12 +255,12 @@ func (h *ChatHandler) streamWebToOpenAI(w http.ResponseWriter, model string, eve
 	}
 
 	finalText := strings.TrimSpace(buffered.String())
-	log.Printf("[tools] raw output (len=%d): %q", len(finalText), finalText[:min(len(finalText), 500)])
+	log.Printf("[tools] raw output len=%d", len(finalText))
 	if toolcall.HasToolCallSyntax(finalText) {
 		calls := toolcall.ParseToolCallsFromText(finalText)
 		log.Printf("[tools] parsed %d calls from text", len(calls))
 		for i, c := range calls {
-			log.Printf("[tools] call[%d]: name=%s input=%v", i, c.Name, c.Input)
+			log.Printf("[tools] call[%d]: name=%s", i, c.Name)
 		}
 		if len(calls) > 0 {
 			toolCalls := toolcall.ConvertToolCallsToOpenAI(calls)
@@ -329,16 +329,15 @@ func (h *ChatHandler) nonStreamWebToOpenAI(w http.ResponseWriter, model string, 
 		}
 	}
 
-
 	finalText := strings.TrimSpace(content.String())
 
 	// 检测是否包含工具调用
-	log.Printf("[tools] non-stream raw output (len=%d): %q", len(finalText), finalText[:min(len(finalText), 500)])
+	log.Printf("[tools] non-stream raw output len=%d", len(finalText))
 	if toolcall.HasToolCallSyntax(finalText) {
 		calls := toolcall.ParseToolCallsFromText(finalText)
 		log.Printf("[tools] non-stream parsed %d calls", len(calls))
 		for i, c := range calls {
-			log.Printf("[tools] call[%d]: name=%s input=%v", i, c.Name, c.Input)
+			log.Printf("[tools] call[%d]: name=%s", i, c.Name)
 		}
 		if len(calls) > 0 {
 			toolCalls := toolcall.ConvertToolCallsToOpenAI(calls)
@@ -434,7 +433,8 @@ func (h *MessagesHandler) Handle(w http.ResponseWriter, r *http.Request) {
 
 	// Look up or create conversation using hash of first message as key
 	firstMsg := promptcompat.ExtractFirstUserMessage(req.Messages)
-	key := convstore.DeriveKey(firstMsg, routeResult.Model)
+	convHint := r.Header.Get("X-Conv-Key")
+	key := convstore.DeriveKey(firstMsg, routeResult.Model, convHint)
 	convID, parentID := h.convStore.GetOrCreate(key)
 
 	// Inject tool definitions into query so MiMo knows what tools are available
@@ -524,8 +524,8 @@ func (h *MessagesHandler) Handle(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "event: message_start\ndata: %s\n\n", adapter.MakeAnthropicStreamEvent("message_start", startMsg))
 		// Send content_block_start for text block (index 0)
 		textBlockStart := map[string]interface{}{
-			"type":         "content_block_start",
-			"index":        0,
+			"type":          "content_block_start",
+			"index":         0,
 			"content_block": map[string]interface{}{"type": "text", "text": ""},
 		}
 		fmt.Fprintf(w, "event: content_block_start\ndata: %s\n\n", adapter.MakeAnthropicStreamEvent("content_block_start", textBlockStart))
@@ -700,7 +700,7 @@ func extractLatestOpenAIUserMessage(msgs []adapter.OpenAIMessage) string {
 		if msgs[i].Role == "user" {
 			if s, ok := msgs[i].Content.(string); ok {
 				if isAutoGeneratedQuery(s) {
-					log.Printf("[filter] skipping auto-generated query (len=%d): %q", len(s), s[:min(len(s), 100)])
+					log.Printf("[filter] skipping auto-generated query (len=%d)", len(s))
 					continue
 				}
 				return s
@@ -743,4 +743,3 @@ func isAutoGeneratedQuery(s string) bool {
 	}
 	return false
 }
-

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Activity, Zap, Cpu, Hash, BarChart3, Clock, List, Download, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Activity, Zap, Cpu, Hash, BarChart3, Clock, List, Download, ChevronLeft, ChevronRight, Lock } from 'lucide-react'
 import { ComposedChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Line, CartesianGrid } from 'recharts'
 import { useSettings } from '../contexts/SettingsContext'
-import { apiFetch } from '../lib/api'
+import { apiFetch, getAdminKey } from '../lib/api'
 
 interface UsageRecord {
   timestamp: string
@@ -90,12 +90,20 @@ export function Dashboard() {
   const [viewMode, setViewMode] = useState<ViewMode>('chart')
   const [timeRange, setTimeRange] = useState<TimeRange>('30d')
   const [page, setPage] = useState(0)
+  const [needAuth, setNeedAuth] = useState(!getAdminKey())
   const PAGE_SIZE = 10
 
   const fetchStats = async () => {
     try {
       const resp = await apiFetch('/admin/api/stats')
-      if (resp.ok) setStats(await resp.json())
+      if (resp.status === 401) {
+        setNeedAuth(true)
+        return
+      }
+      if (resp.ok) {
+        setStats(await resp.json())
+        setNeedAuth(false)
+      }
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }
@@ -183,6 +191,15 @@ export function Dashboard() {
             {t('dashboardSubtitle')}
           </motion.p>
         </div>
+        {/* 未鉴权提示：自用场景需先在「配置」页输入管理密钥 */}
+        {needAuth && (
+          <motion.div
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm ${isDark ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-amber-50 text-amber-600 border border-amber-200'}`}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <Lock className="w-4 h-4" />
+            {lang === 'zh' ? '请在「配置」页输入管理密钥以查看统计' : 'Enter admin key in Config to view stats'}
+          </motion.div>
+        )}
         {/* Stats Cards */}
         <motion.div className="flex gap-3" variants={container} initial="hidden" animate="show">
           {[

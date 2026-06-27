@@ -15,7 +15,7 @@ type ConvState struct {
 
 // ConversationStore 对话 ID 映射存储
 type ConversationStore struct {
-	mu    sync.RWMutex
+	mu sync.RWMutex
 	// clientConvID -> ConvState
 	store map[string]*ConvState
 	path  string
@@ -117,7 +117,8 @@ func (s *ConversationStore) save() {
 	if err != nil {
 		return
 	}
-	os.WriteFile(s.path, data, 0644)
+	// 0600：仅属主可读写
+	os.WriteFile(s.path, data, 0600)
 }
 
 func (s *ConversationStore) load() {
