@@ -224,5 +224,3 @@ func contentType(ext string) string {
 		return "application/octet-stream"
 	}
 }
-
-// CI auto-build test: branch-push trigger verification
